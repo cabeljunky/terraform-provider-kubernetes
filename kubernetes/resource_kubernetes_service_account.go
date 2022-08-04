@@ -117,9 +117,15 @@ func getServiceAccountDefaultSecret(ctx context.Context, name string, config api
 			return resource.NonRetryableError(err)
 		}
 
-		if len(resp.Secrets) == len(config.Secrets) {
-			log.Printf("[DEBUG] Configuration contains %d secrets, saw %d, expected %d", len(config.Secrets), len(resp.Secrets), len(config.Secrets)+1)
-			return resource.RetryableError(fmt.Errorf("Waiting for default secret of %q to appear", buildId(resp.ObjectMeta)))
+		/*
+		   https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.24.md#urgent-upgrade-notes
+		   K8s 1.24: The LegacyServiceAccountTokenNoAutoGeneration feature gate is beta, and enabled by default.
+		   This means the default token will not be there and requires onw token to be generated and attached.
+		   Generate the error only if there are no responses of the minimal set of token are not there.
+		*/
+		if len(resp.Secrets) == 0 {
+			log.Printf("[DEBUG] Configuration contains %d secrets, saw %d", len(config.Secrets), len(resp.Secrets))
+			return resource.RetryableError(fmt.Errorf("Waiting for service account token secret of %q to appear [%d/%d]", buildId(resp.ObjectMeta), len(config.Secrets), len(resp.Secrets)))
 		}
 
 		diff := diffObjectReferences(config.Secrets, resp.Secrets)

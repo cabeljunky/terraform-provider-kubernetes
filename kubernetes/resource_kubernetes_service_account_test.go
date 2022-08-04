@@ -102,6 +102,35 @@ func TestAccKubernetesServiceAccount_automount(t *testing.T) {
 					}),
 				),
 			},
+			//K8s 1.24 without default token test
+			{
+				Config: testAccKubernetesServiceAccountConfig_automount(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesServiceAccountExists("kubernetes_service_account.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.annotations.%", "2"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.annotations.TestAnnotationOne", "one"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.annotations.TestAnnotationTwo", "two"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.labels.%", "3"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.labels.TestLabelOne", "one"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.labels.TestLabelTwo", "two"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.labels.TestLabelThree", "three"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.name", name),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.generation"),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.resource_version"),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.uid"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "secret.#", "2"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "image_pull_secret.#", "2"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "automount_service_account_token", "false"),
+					testAccCheckServiceAccountImagePullSecrets(&conf, []*regexp.Regexp{
+						regexp.MustCompile("^" + name + "-three$"),
+						regexp.MustCompile("^" + name + "-four$"),
+					}),
+					testAccCheckServiceAccountSecrets(&conf, []*regexp.Regexp{
+						regexp.MustCompile("^" + name + "-one$"),
+						regexp.MustCompile("^" + name + "-two$"),
+					}),
+				),
+			},
 		},
 	})
 }
@@ -192,6 +221,24 @@ func TestAccKubernetesServiceAccount_update(t *testing.T) {
 					}),
 				),
 			},
+			//K8s 1.24 without default token test
+			{
+				Config: testAccKubernetesServiceAccountConfig_noAttributes(name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesServiceAccountExists("kubernetes_service_account.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.annotations.%", "0"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.labels.%", "0"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.name", name),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.generation"),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.resource_version"),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.uid"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "secret.#", "0"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "image_pull_secret.#", "0"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "automount_service_account_token", "true"),
+					testAccCheckServiceAccountImagePullSecrets(&conf, []*regexp.Regexp{}),
+					testAccCheckServiceAccountSecrets(&conf, []*regexp.Regexp{}),
+				),
+			},
 		},
 	})
 }
@@ -222,6 +269,23 @@ func TestAccKubernetesServiceAccount_generatedName(t *testing.T) {
 					testAccCheckServiceAccountSecrets(&conf, []*regexp.Regexp{
 						regexp.MustCompile("^" + prefix + "[a-z0-9]+-token-[a-z0-9]+$"),
 					}),
+				),
+			},
+			{
+				//K8s 1.24 without default token test
+				Config: testAccKubernetesServiceAccountConfig_generatedName(prefix),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testAccCheckKubernetesServiceAccountExists("kubernetes_service_account.test", &conf),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.annotations.%", "0"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.labels.%", "0"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "metadata.0.generate_name", prefix),
+					resource.TestMatchResourceAttr("kubernetes_service_account.test", "metadata.0.name", regexp.MustCompile("^"+prefix)),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.generation"),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.resource_version"),
+					resource.TestCheckResourceAttrSet("kubernetes_service_account.test", "metadata.0.uid"),
+					resource.TestCheckResourceAttr("kubernetes_service_account.test", "automount_service_account_token", "true"),
+					testAccCheckServiceAccountImagePullSecrets(&conf, []*regexp.Regexp{}),
+					testAccCheckServiceAccountSecrets(&conf, []*regexp.Regexp{}),
 				),
 			},
 		},
