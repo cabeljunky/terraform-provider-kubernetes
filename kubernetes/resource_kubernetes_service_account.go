@@ -102,15 +102,22 @@ func resourceKubernetesServiceAccountCreate(ctx context.Context, d *schema.Resou
 		return diag.FromErr(err)
 	}
 
-	err = d.Set("default_secret_name", secret.Name)
-	if err != nil {
-		return diag.FromErr(err)
+	if secret != nil {
+		err = d.Set("default_secret_name", secret.Name)
+		if err != nil {
+			return diag.FromErr(err)
+		}
+	} else {
+		d.Set("default_secret_name", "")
 	}
+
 	return resourceKubernetesServiceAccountRead(ctx, d, meta)
 }
 
 func getServiceAccountDefaultSecret(ctx context.Context, name string, config api.ServiceAccount, timeout time.Duration, conn *kubernetes.Clientset) (*api.Secret, error) {
 	var svcAccTokens []api.Secret
+	var svcDefaultTokens *api.Secret
+
 	err := resource.RetryContext(ctx, timeout, func() *resource.RetryError {
 		resp, err := conn.CoreV1().ServiceAccounts(config.Namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
@@ -123,7 +130,7 @@ func getServiceAccountDefaultSecret(ctx context.Context, name string, config api
 		   This means the default token will not be there and requires onw token to be generated and attached.
 		   Generate the error only if there are no responses of the minimal set of token are not there.
 		*/
-		if len(resp.Secrets) == 0 {
+		if len(config.Secrets) > 0 && len(resp.Secrets) == 0 {
 			log.Printf("[DEBUG] Configuration contains %d secrets, saw %d", len(config.Secrets), len(resp.Secrets))
 			return resource.RetryableError(fmt.Errorf("Waiting for service account token secret of %q to appear [%d/%d]", buildId(resp.ObjectMeta), len(config.Secrets), len(resp.Secrets)))
 		}
@@ -145,12 +152,8 @@ func getServiceAccountDefaultSecret(ctx context.Context, name string, config api
 			}
 		}
 
-		if len(svcAccTokens) == 0 {
-			return resource.RetryableError(fmt.Errorf("Expected 1 generated service account token, %d found", len(svcAccTokens)))
-		}
-
-		if len(svcAccTokens) > 1 {
-			return resource.NonRetryableError(fmt.Errorf("Expected 1 generated service account token, %d found: %s", len(svcAccTokens), err))
+		if len(svcAccTokens) < len(config.Secrets) {
+			return resource.NonRetryableError(fmt.Errorf("Expected %d generated service account token, %d found: %s", len(config.Secrets), len(svcAccTokens), err))
 		}
 
 		return nil
@@ -159,7 +162,18 @@ func getServiceAccountDefaultSecret(ctx context.Context, name string, config api
 		return nil, err
 	}
 
-	return &svcAccTokens[0], nil
+	/*
+	   https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.24.md#urgent-upgrade-notes
+	   K8s 1.24: The LegacyServiceAccountTokenNoAutoGeneration feature gate is beta, and enabled by default.
+	   This means the default token will not be there and requires onw token to be generated and attached.
+	   So we need to return nothing or the first item
+	*/
+	svcDefaultTokens = nil
+	if len(svcAccTokens) > 0 {
+		svcDefaultTokens = &svcAccTokens[0]
+	}
+	return svcDefaultTokens, nil
+
 }
 
 func findDefaultServiceAccount(ctx context.Context, sa *api.ServiceAccount, conn *kubernetes.Clientset) (string, diag.Diagnostics) {
